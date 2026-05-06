@@ -45,23 +45,35 @@ def get_sip_rules_for_tenant(tenant_id):
                       R.DESCRIPTION as MASTER_DESC, R.RULE_ACTION, M.CALL_TYPE, 
                       S.SERVICE_TYPE, R.CARRIER_SEARCH_MODE,
                       R.B_PARTY_CARRIER_MAPPING_ID, R.MSRN_CARRIER_MAPPING_ID,
-                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG,
-                      LB.LIST_NAME as B_PARTY_LIST_NAME,
-                      LM.LIST_NAME as MSRN_LIST_NAME,
-                      LT.LIST_NAME as TENANT_LIST_NAME,
-                      LD.LIST_NAME as DEFAULT_LIST_NAME
+                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG
                FROM TENANT_SIP_RULE_MAPPING M
                JOIN SIP_RULE_MASTER R ON M.RULE_ID = R.RULE_ID
                JOIN SERVICE_MASTER  S ON M.SERVICE_ID = S.SERVICE_ID
-               LEFT JOIN LIST_MASTER LB ON R.B_PARTY_CARRIER_MAPPING_ID = LB.LIST_ID
-               LEFT JOIN LIST_MASTER LM ON R.MSRN_CARRIER_MAPPING_ID = LM.LIST_ID
-               LEFT JOIN LIST_MASTER LT ON R.TENANT_CARRIER_MAPPING_ID = LT.LIST_ID
-               LEFT JOIN LIST_MASTER LD ON R.DEFAULT_CARRIER_LIST_ID = LD.LIST_ID
                WHERE M.TENANT_ID = ?
                ORDER BY R.RULE_ID""",
             (tenant_id,)
         ).fetchall()
-    return [dict(r) for r in rows]
+        
+        # Helper to get names for comma-separated IDs
+        all_lists = {str(l['LIST_ID']): l['LIST_NAME'] for l in get_all_lists()}
+        
+        results = []
+        for r in rows:
+            rd = dict(r)
+            
+            def get_names(id_str):
+                if not id_str or id_str == '0': return "N/A"
+                ids = id_str.split(",")
+                return ", ".join([all_lists.get(i.strip(), i.strip()) for i in ids if i.strip()])
+            
+            rd['B_PARTY_LIST_NAME'] = get_names(rd['B_PARTY_CARRIER_MAPPING_ID'])
+            rd['MSRN_LIST_NAME'] = get_names(rd['MSRN_CARRIER_MAPPING_ID'])
+            rd['TENANT_LIST_NAME'] = get_names(rd['TENANT_CARRIER_MAPPING_ID'])
+            rd['DEFAULT_LIST_NAME'] = get_names(rd['DEFAULT_CARRIER_LIST_ID'])
+            
+            results.append(rd)
+            
+    return results
 
 def get_all_rules():
     with get_conn() as conn:
@@ -144,14 +156,27 @@ def get_rule_mapping(mapping_id):
         """, (mapping_id,)).fetchone()
         return dict(row) if row else None
 
-def update_sip_rule(mapping_id, rule_id, description, call_type, service_id):
+def update_sip_rule_full(mapping_id, rule_id, description, call_type, service_id, master_data):
     with get_conn() as conn:
         try:
+            # 1. Update Mapping
             conn.execute("""
                 UPDATE TENANT_SIP_RULE_MAPPING
                 SET RULE_ID = ?, DESCRIPTION = ?, CALL_TYPE = ?, SERVICE_ID = ?
                 WHERE MAPPING_ID = ?
             """, (rule_id, description, call_type, service_id, mapping_id))
+            
+            # 2. Update Master Rule (associated with this mapping)
+            conn.execute("""
+                UPDATE SIP_RULE_MASTER
+                SET CARRIER_SEARCH_MODE = ?, B_PARTY_CARRIER_MAPPING_ID = ?, 
+                    MSRN_CARRIER_MAPPING_ID = ?, TENANT_CARRIER_MAPPING_ID = ?, 
+                    DEFAULT_CARRIER_LIST_ID = ?, RECORDING_FLAG = ?
+                WHERE RULE_ID = ?
+            """, (master_data['carrier_search_mode'], master_data['b_party_id'],
+                  master_data['msrn_id'], master_data['tenant_carrier_id'],
+                  master_data['default_cl_id'], master_data['recording_flag'], rule_id))
+            
             conn.commit()
             return True, None
         except Exception as e:

@@ -523,6 +523,36 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
     form_action = f"/sip-rule/update/{mapping_id}?tenant_id={tenant_id}" if is_edit else f"/tenant/{tenant_id}/sip-rule"
     title = "Edit SIP Routing Rule" if is_edit else "Add SIP Routing Rule"
 
+    mapping = None
+    if is_edit:
+        mapping = db.get_rule_mapping(mapping_id)
+
+    # Prepare dynamic list sections to avoid complex f-string nesting
+    def prepare_list_section(l_type, current_ids, field_name):
+        ids = (current_ids or "").split(",") if current_ids and current_ids != "0" else [""]
+        lists = db.get_all_lists(l_type)
+        options_json = ", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in lists])
+        
+        containers = "".join([
+            f'<div class="relative flex items-center group routing-row-{l_type}" data-index="{i}">'
+            f'<div id="{l_type.lower()}-container-{i}" class="flex-grow"></div>'
+            f'{"<button type=\'button\' onclick=\'this.closest(\".relative\").remove()\' class=\'ml-2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity\'><i class=\'fa-solid fa-circle-xmark\'></i></button>" if i > 0 else ""}'
+            f'</div>' 
+            for i in range(len(ids))
+        ])
+        scripts = "".join([
+            f"initCustomSelect('{l_type.lower()}-container-{i}', [{options_json}], {{name: '{field_name}', defaultValue: '{ids[i]}'}});"
+            for i in range(len(ids))
+        ])
+        return containers, scripts
+
+    bparty_html, bparty_js = prepare_list_section('BPARTY', mapping["B_PARTY_CARRIER_MAPPING_ID"] if mapping else None, 'b_party_id[]')
+    msrn_html, msrn_js = prepare_list_section('MSRN', mapping["MSRN_CARRIER_MAPPING_ID"] if mapping else None, 'msrn_id[]')
+    tenant_html, tenant_js = prepare_list_section('TENANT', mapping["TENANT_CARRIER_MAPPING_ID"] if mapping else None, 'tenant_carrier_id[]')
+    
+    default_lists = db.get_all_lists('DEFAULT')
+    default_options = ", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in default_lists])
+
     return f"""
     <div id="modal" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
@@ -580,67 +610,128 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                                 ], {{name: 'carrier_search_mode', searchable: false, defaultValue: 'DEFAULT'}});
                                             </script>
                                         </div>
-                                        <div>
+                                        <div class="flex flex-col">
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Recording Flag</label>
-                                            <div class="mt-1 flex items-center">
+                                            <div class="flex items-center h-[42px]">
                                                 <label class="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" name="recording_flag_toggle" class="sr-only peer">
+                                                    <input type="checkbox" name="recording_flag_toggle" class="sr-only peer" {"checked" if mapping and mapping["RECORDING_FLAG"] else ""}>
                                                     <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                                    <span class="ml-3 text-sm font-medium text-gray-500">Record Call</span>
+                                                    <span class="ml-3 text-sm font-medium text-gray-600">Record Call</span>
                                                 </label>
                                             </div>
                                         </div>
                                     </div>
 
                                     <div id="carrier-id-container" class="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                        <!-- DEFAULT -->
                                         <div id="field-DEFAULT">
-                                            <div class="flex justify-between items-center mb-1">
-                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">Default Carrier List</label>
-                                            </div>
-                                            <div id="default-list-container"></div>
+                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Default Carrier List</label>
+                                            <div id="default-list-container-0"></div>
                                             <script>
-                                                initCustomSelect('default-list-container', [
-                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('DEFAULT')])}
-                                                ], {{name: 'default_cl_id', placeholder: 'Select Default List...', defaultValue: '{mapping["DEFAULT_CARRIER_LIST_ID"] if mapping else ""}'}});
+                                                initCustomSelect('default-list-container-0', [{default_options}], {{name: 'default_cl_id[]', placeholder: 'Select Default List...', defaultValue: '{mapping["DEFAULT_CARRIER_LIST_ID"] if mapping else ""}'}});
                                             </script>
                                         </div>
-                                        <div id="field-BPARTY" class="hidden">
-                                            <div class="flex justify-between items-center mb-1">
-                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">B-Party Mapping</label>
-                                                <button type="button" hx-get="/list/add?type=BPARTY" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+
+                                        <!-- BPARTY -->
+                                        <div id="field-BPARTY" class="hidden space-y-3">
+                                            <div class="flex justify-between items-center">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">B-Party Mappings</label>
+                                                <div class="flex space-x-2">
+                                                    <button type="button" onclick="addSelectionRow('BPARTY')" class="text-[10px] text-blue-600 hover:underline font-bold">+ Add Another</button>
+                                                    <span class="text-gray-300">|</span>
+                                                    <button type="button" hx-get="/list/add?type=BPARTY" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">New List</button>
+                                                </div>
                                             </div>
-                                            <div id="bparty-list-container"></div>
-                                            <script>
-                                                initCustomSelect('bparty-list-container', [
-                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('BPARTY')])}
-                                                ], {{name: 'b_party_id', placeholder: 'Select B-Party List...', defaultValue: '{mapping["B_PARTY_CARRIER_MAPPING_ID"] if mapping else ""}'}});
-                                            </script>
+                                            <div id="bparty-rows" class="space-y-2">
+                                                {bparty_html}
+                                            </div>
+                                            <script>{bparty_js}</script>
                                         </div>
-                                        <div id="field-MSRN" class="hidden">
-                                            <div class="flex justify-between items-center mb-1">
-                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">MSRN Mapping</label>
-                                                <button type="button" hx-get="/list/add?type=MSRN" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+
+                                        <!-- MSRN -->
+                                        <div id="field-MSRN" class="hidden space-y-3">
+                                            <div class="flex justify-between items-center">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">MSRN Mappings</label>
+                                                <div class="flex space-x-2">
+                                                    <button type="button" onclick="addSelectionRow('MSRN')" class="text-[10px] text-blue-600 hover:underline font-bold">+ Add Another</button>
+                                                    <span class="text-gray-300">|</span>
+                                                    <button type="button" hx-get="/list/add?type=MSRN" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">New List</button>
+                                                </div>
                                             </div>
-                                            <div id="msrn-list-container"></div>
-                                            <script>
-                                                initCustomSelect('msrn-list-container', [
-                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('MSRN')])}
-                                                ], {{name: 'msrn_id', placeholder: 'Select MSRN List...', defaultValue: '{mapping["MSRN_CARRIER_MAPPING_ID"] if mapping else ""}'}});
-                                            </script>
+                                            <div id="msrn-rows" class="space-y-2">
+                                                {msrn_html}
+                                            </div>
+                                            <script>{msrn_js}</script>
                                         </div>
-                                        <div id="field-TENANT" class="hidden">
-                                            <div class="flex justify-between items-center mb-1">
-                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">Tenant Group Mapping</label>
-                                                <button type="button" hx-get="/list/add?type=TENANT" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+
+                                        <!-- TENANT -->
+                                        <div id="field-TENANT" class="hidden space-y-3">
+                                            <div class="flex justify-between items-center">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">Tenant Group Mappings</label>
+                                                <div class="flex space-x-2">
+                                                    <button type="button" onclick="addSelectionRow('TENANT')" class="text-[10px] text-blue-600 hover:underline font-bold">+ Add Another</button>
+                                                    <span class="text-gray-300">|</span>
+                                                    <button type="button" hx-get="/list/add?type=TENANT" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">New List</button>
+                                                </div>
                                             </div>
-                                            <div id="tenant-list-container"></div>
-                                            <script>
-                                                initCustomSelect('tenant-list-container', [
-                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('TENANT')])}
-                                                ], {{name: 'tenant_carrier_id', placeholder: 'Select Tenant Group...', defaultValue: '{mapping["TENANT_CARRIER_MAPPING_ID"] if mapping else ""}'}});
-                                            </script>
+                                            <div id="tenant-rows" class="space-y-2">
+                                                {tenant_html}
+                                            </div>
+                                            <script>{tenant_js}</script>
                                         </div>
                                     </div>
+
+                                    <script>
+                                        // Global registry of available lists for dynamic updates
+                                        window.routingOptions = {{
+                                            BPARTY: [{", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('BPARTY')])}],
+                                            MSRN: [{", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('MSRN')])}],
+                                            TENANT: [{", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('TENANT')])}],
+                                            DEFAULT: [{", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('DEFAULT')])}]
+                                        }};
+
+                                        let rowCounters = {{ BPARTY: 10, MSRN: 10, TENANT: 10, DEFAULT: 10 }};
+                                        
+                                        function addSelectionRow(type, defaultValue = '') {{
+                                            const containerId = type.toLowerCase() + '-rows';
+                                            const container = document.getElementById(containerId);
+                                            const count = ++rowCounters[type];
+                                            const newId = `${{type.toLowerCase()}}-container-${{count}}`;
+                                            
+                                            const wrapper = document.createElement('div');
+                                            wrapper.className = `relative flex items-center group routing-row-${{type}}`;
+                                            wrapper.dataset.index = count;
+                                            wrapper.innerHTML = `
+                                                <div id="${{newId}}" class="flex-grow"></div>
+                                                <button type="button" onclick="this.closest('.relative').remove()" class="ml-2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <i class="fa-solid fa-circle-xmark"></i>
+                                                </button>
+                                            `;
+                                            container.appendChild(wrapper);
+                                            
+                                            initCustomSelect(newId, window.routingOptions[type], {{
+                                                name: type === 'BPARTY' ? 'b_party_id[]' : type === 'MSRN' ? 'msrn_id[]' : 'tenant_carrier_id[]',
+                                                placeholder: 'Select ' + type + ' List...',
+                                                defaultValue: defaultValue
+                                            }});
+                                        }}
+
+                                        // Helper to refresh all selects of a type when a new list is added
+                                        window.refreshAllRoutingSelects = function(type, newListId) {{
+                                            const rows = document.querySelectorAll(`.routing-row-${{type}}`);
+                                            rows.forEach(row => {{
+                                                const containerId = row.querySelector('div[id]').id;
+                                                const hiddenInput = row.querySelector('input[type="hidden"]');
+                                                const currentVal = hiddenInput ? hiddenInput.value : '';
+                                                
+                                                initCustomSelect(containerId, window.routingOptions[type], {{
+                                                    name: type === 'BPARTY' ? 'b_party_id[]' : type === 'MSRN' ? 'msrn_id[]' : 'tenant_carrier_id[]',
+                                                    placeholder: 'Select ' + type + ' List...',
+                                                    defaultValue: (newListId && row.dataset.index == Math.max(...Array.from(rows).map(r => r.dataset.index))) ? newListId : currentVal
+                                                }});
+                                            }});
+                                        }};
+                                    </script>
                                 </div>
 
                                 <!-- Mapping Section -->
@@ -869,9 +960,26 @@ def tenant_sip_rule_update(mapping_id):
     call_type = request.form.get('call_type')
     service_id = int(request.form.get('service_id')) if request.form.get('service_id') else None
     
+    # NEW: Handle potential updates to master rule if needed
+    # For now, let's just make sure we capture all IDs
+    b_party_ids = ",".join(request.form.getlist('b_party_id[]'))
+    msrn_ids = ",".join(request.form.getlist('msrn_id[]'))
+    tenant_ids = ",".join(request.form.getlist('tenant_carrier_id[]'))
+    default_ids = ",".join(request.form.getlist('default_cl_id[]'))
+
     print(f"Updating Rule: {mapping_id}, RuleID: {rule_id}, Desc: {description}, Tenant: {tenant_id}")
     
-    success, error = db.update_sip_rule(int(mapping_id), rule_id, description, call_type, service_id)
+    # We should also update the master rule details
+    master_data = {
+        'b_party_id': b_party_ids,
+        'msrn_id': msrn_ids,
+        'tenant_carrier_id': tenant_ids,
+        'default_cl_id': default_ids,
+        'carrier_search_mode': request.form.get('carrier_search_mode'),
+        'recording_flag': 1 if request.form.get('recording_flag_toggle') == 'on' else 0
+    }
+    
+    success, error = db.update_sip_rule_full(int(mapping_id), rule_id, description, call_type, service_id, master_data)
     if not success: print(f"Update failed: {error}")
     
     if success:
@@ -892,10 +1000,10 @@ def tenant_sip_rule_add(tenant_id):
             'mapping_desc': request.form.get('mapping_description'),
             'rule_action': 'ALLOW',
             'carrier_search_mode': request.form.get('carrier_search_mode'),
-            'b_party_id': request.form.get('b_party_id', '0'),
-            'msrn_id': request.form.get('msrn_id', '0'),
-            'tenant_carrier_id': request.form.get('tenant_carrier_id', '0'),
-            'default_cl_id': request.form.get('default_cl_id', '0'),
+            'b_party_id': ",".join(request.form.getlist('b_party_id[]')),
+            'msrn_id': ",".join(request.form.getlist('msrn_id[]')),
+            'tenant_carrier_id': ",".join(request.form.getlist('tenant_carrier_id[]')),
+            'default_cl_id': ",".join(request.form.getlist('default_cl_id[]')),
             'recording_flag': 1 if request.form.get('recording_flag_toggle') == 'on' else 0
         }
         success, error = db.create_and_map_rule(tenant_id, rule_data, request.form.get('call_type'), request.form.get('service_id'))
@@ -957,11 +1065,8 @@ def list_create():
         script = f"""
         <script>
             document.getElementById('list-modal').remove();
-            initCustomSelect('{container_id}', [{options_js}], {{
-                name: '{'b_party_id' if list_type == 'BPARTY' else 'msrn_id' if list_type == 'MSRN' else 'tenant_carrier_id'}',
-                placeholder: 'Select {list_type} List...',
-                defaultValue: '{result}'
-            }});
+            window.routingOptions['{list_type}'] = [{options_js}];
+            window.refreshAllRoutingSelects('{list_type}', '{result}');
             showToast('List "{list_name}" created successfully');
         </script>
         """
