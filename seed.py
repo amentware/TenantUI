@@ -12,6 +12,7 @@ def setup_database():
         DROP TABLE IF EXISTS SIP_RULE_MASTER;
         DROP TABLE IF EXISTS SERVICE_MASTER;
         DROP TABLE IF EXISTS TENANT;
+        DROP TABLE IF EXISTS CARRIER_MASTER;
 
         CREATE TABLE IF NOT EXISTS TENANT (
             TENANT_ID   TEXT PRIMARY KEY,
@@ -20,6 +21,13 @@ def setup_database():
             COUNTRY     TEXT NOT NULL,
             STATUS      TEXT NOT NULL DEFAULT 'ACTIVE',
             CREATED_AT  TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS CARRIER_MASTER (
+            ID              INTEGER PRIMARY KEY AUTOINCREMENT,
+            CARRIER_ID      INTEGER NOT NULL UNIQUE,
+            CARRIER_NAME    TEXT,
+            DESCRIPTION     TEXT
         );
 
         CREATE TABLE IF NOT EXISTS SIP_RULE_MASTER (
@@ -46,11 +54,13 @@ def setup_database():
             DESCRIPTION TEXT,
             CALL_TYPE   TEXT NOT NULL,
             SERVICE_ID  TEXT NOT NULL,
+            CARRIER_ID  INTEGER,
             CREATED_AT  TEXT NOT NULL,
             UNIQUE(TENANT_ID, RULE_ID, CALL_TYPE, SERVICE_ID),
             FOREIGN KEY (TENANT_ID)  REFERENCES TENANT(TENANT_ID),
             FOREIGN KEY (RULE_ID)    REFERENCES SIP_RULE_MASTER(RULE_ID),
-            FOREIGN KEY (SERVICE_ID) REFERENCES SERVICE_MASTER(SERVICE_ID)
+            FOREIGN KEY (SERVICE_ID) REFERENCES SERVICE_MASTER(SERVICE_ID),
+            FOREIGN KEY (CARRIER_ID) REFERENCES CARRIER_MASTER(CARRIER_ID)
         );
 
         CREATE TABLE IF NOT EXISTS LIST_MASTER (
@@ -93,6 +103,27 @@ def setup_database():
     c.executemany(
         'INSERT OR IGNORE INTO SERVICE_MASTER (SERVICE_ID, SERVICE_TYPE) VALUES (?, ?)',
         services
+    )
+
+    # === SEED: CARRIER_MASTER ===
+    carriers = [
+        (20020, None, 'TATA WHOLESALE PSTN'),
+        (20012, None, 'LOOP BACK PREFIX'),
+        (20022, None, 'BT'),
+        (20041, None, 'Teleware'),
+        (20064, None, 'Engine Mobile onnet'),
+        (20065, None, 'Engine Mobile offnet'),
+        (20045, None, 'KPN NATIONAL ROAMING 1'),
+        (20025, None, 'KPN NATIONAL ROAMING 2'),
+        (20029, None, 'EE'),
+        (20031, None, 'IMS'),
+        (20021, None, 'KPN'),
+        (20044, None, 'IBASIS'),
+        (20074, None, 'IRISTEL'),
+    ]
+    c.executemany(
+        'INSERT INTO CARRIER_MASTER (CARRIER_ID, CARRIER_NAME, DESCRIPTION) VALUES (?, ?, ?)',
+        carriers
     )
 
     # === SEED: SIP_RULE_MASTER (Matching User Image) ===

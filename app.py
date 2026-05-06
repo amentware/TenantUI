@@ -110,6 +110,7 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
         function initCustomSelect(containerId, options, config = {{}}) {{
             const {{ onSelect, name, placeholder = 'Select option...', searchable = true, defaultValue = '' }} = config;
             const container = document.getElementById(containerId);
+            container._customSelectConfig = config; // Store config for later use
             const inputId = containerId + '-input';
             const listId = containerId + '-list';
             const hiddenId = containerId + '-hidden';
@@ -136,7 +137,7 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
                     <div id="${{listId}}" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
                         ${{options.map(o => `
                             <div class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer text-sm transition-colors border-b last:border-0 border-gray-50 flex items-center group" 
-                                 onclick="selectCustomOption('${{containerId}}', '${{o.id}}', '${{o.text}}', '${{onSelect}}')">
+                                 onclick="selectCustomOption('${{containerId}}', '${{o.id}}', '${{o.text}}')">
                                 <span class="text-gray-700 group-hover:text-blue-700">${{o.text}}</span>
                             </div>
                         `).join('')}}
@@ -167,10 +168,13 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
             }});
         }}
 
-        function selectCustomOption(containerId, id, text, onSelect) {{
+        function selectCustomOption(containerId, id, text) {{
+            const container = document.getElementById(containerId);
             const input = document.getElementById(containerId + '-input');
             const hidden = document.getElementById(containerId + '-hidden');
             const list = document.getElementById(containerId + '-list');
+            const config = container._customSelectConfig || {{}};
+            const {{ onSelect, onChange }} = config;
             
             // Check for duplicates in multi-row selections
             if (hidden && hidden.name && hidden.name.endsWith('[]')) {{
@@ -193,7 +197,9 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
                 toggleCarrierFields(id);
             }}
             
-            if (onSelect && onSelect !== 'undefined') {{
+            if (onChange) onChange(id, text);
+            
+            if (onSelect) {{
                 htmx.ajax('GET', `${{onSelect}}?rule_id=${{id}}`, '#dynamic-details-view');
             }}
         }}
@@ -412,11 +418,11 @@ def tenant_details_content(tenant_id):
                 <div class="border-b border-gray-200 bg-gray-50/50 flex px-2 pt-2">
                     <button hx-get="/tenant/{tenant_id}/sip-rules" hx-target="#tab-content" 
                             class="px-6 py-3 text-sm font-semibold border-b-2 border-blue-600 text-blue-600">
-                        SIP Rules
+                        SIP Call Control
                     </button>
                     <button hx-get="/tenant/{tenant_id}/services" hx-target="#tab-content" 
                             class="px-6 py-3 text-sm font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-all">
-                        Cap Rules
+                        CAP Call Control
                     </button>
             
                 </div>
@@ -448,7 +454,6 @@ def sip_rules_partial(tenant_id):
             <td class="px-6 py-4 font-mono text-xs font-medium text-gray-900">{r['RULE_ID']}</td>
             <td class="px-6 py-4">
                 <p class="text-sm text-gray-900 font-bold">{r['MAPPING_DESC']}</p>
-                <p class="text-[10px] text-gray-400 mt-0.5">Rule: {r['MASTER_DESC']}</p>
                 <div class="flex space-x-2 mt-2">
                     <span class="text-[10px] uppercase font-bold bg-green-50 px-1 rounded text-green-700">{r['RULE_ACTION']}</span>
                     <span class="text-[10px] uppercase font-bold bg-gray-100 px-1 rounded text-gray-600">{r['CALL_TYPE']}</span>
@@ -513,6 +518,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
     print(f"Opening Modal: Tenant={tenant_id}, Mode={mode}, MappingID={mapping_id}")
     rules = db.get_all_rules()
     services = db.get_all_services()
+    carriers = db.get_all_carriers()
     
     mapping = None
     if mapping_id:
@@ -564,6 +570,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
     
     default_lists = db.get_all_lists('DEFAULT')
     default_options = ", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in default_lists])
+    carrier_options = ", ".join([f'{{id: "{c["CARRIER_ID"]}", text: "{c["DESCRIPTION"]}"}}' for c in carriers])
 
     return f"""
     <div id="modal" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
@@ -605,13 +612,13 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                 <div class="space-y-4">
                                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Master Rule Definition</h4>
                                     <div>
-                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Rule Description</label>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Rule Name</label>
                                         <input type="text" name="master_description" placeholder="Master rule description..." required
                                                class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
                                     </div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Carrier Search Mode</label>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Routing Criteria</label>
                                             <div id="carrier-search-mode-container"></div>
                                             <script>
                                                 initCustomSelect('carrier-search-mode-container', [
@@ -749,11 +756,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                 <!-- Mapping Section -->
                                 <div class="space-y-4 border-l pl-8">
                                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Tenant Mapping Info</h4>
-                                    <div>
-                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mapping Description</label>
-                                        <input type="text" name="mapping_description" placeholder="Tenant specific name..." required
-                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                    </div>
+                                   
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
@@ -776,12 +779,26 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                             </script>
                                         </div>
                                     </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Carrier</label>
+                                        <div id="carrier-container"></div>
+                                        <script>
+                                            initCustomSelect('carrier-container', [
+                                                {carrier_options}
+                                            ], {{name: 'carrier_id', searchable: true, placeholder: 'Select Carrier...', defaultValue: '{mapping["CARRIER_ID"] if mapping else ""}'}});
+                                        </script>
+                                    </div>
                                 </div>
                             </div>
                             ''' if is_new else f'''
                             <div class="grid grid-cols-2 gap-8">
                                 <div class="space-y-4">
-                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Selection</h4>
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Master Rule Definition</h4>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Rule Name</label>
+                                        <input type="text" name="master_description" id="edit-rule-name" value="{mapping['MASTER_DESC'] if mapping else ''}" placeholder="Rule name..." required
+                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold">
+                                    </div>
                                     <div>
                                         <label class="block text-sm font-bold text-gray-700 mb-2">Search Rule Master</label>
                                         <div id="rule-search-container"></div>
@@ -790,7 +807,11 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                                 {", ".join([f'{{id: "{r["RULE_ID"]}", text: "{r["DESCRIPTION"]}"}}' for r in rules])}
                                             ], {{
                                                 name: 'rule_id', 
-                                                onSelect: '/rule/details/partial', 
+                                                onSelect: '/rule/details/partial',
+                                                onChange: (id, text) => {{
+                                                    const nameInput = document.getElementById('edit-rule-name');
+                                                    if (nameInput) nameInput.value = text;
+                                                }},
                                                 placeholder: 'Search rule by ID or description...',
                                                 defaultValue: '{mapping['RULE_ID'] if mapping else ''}'
                                             }});
@@ -802,11 +823,6 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
                                 </div>
                                 <div class="space-y-4 border-l pl-8">
                                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Tenant Mapping Info</h4>
-                                    <div>
-                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mapping Description</label>
-                                        <input type="text" name="mapping_description" value="{mapping['DESCRIPTION'] if mapping else ''}" placeholder="Tenant specific name..." required
-                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                    </div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
@@ -968,9 +984,13 @@ def tenant_sip_rule_edit_modal(tenant_id, mapping_id):
 def tenant_sip_rule_update(mapping_id):
     tenant_id = request.args.get('tenant_id')
     rule_id = int(request.form.get('rule_id')) if request.form.get('rule_id') else None
-    description = request.form.get('mapping_description')
+    
+    # Use Rule Name for mapping description if not provided (Unified UI)
+    description = request.form.get('master_description')
+    
     call_type = request.form.get('call_type')
     service_id = int(request.form.get('service_id')) if request.form.get('service_id') else None
+    carrier_id = request.form.get('carrier_id')
     
     # NEW: Handle potential updates to master rule if needed
     # For now, let's just make sure we capture all IDs
@@ -979,7 +999,7 @@ def tenant_sip_rule_update(mapping_id):
     tenant_ids = ",".join(request.form.getlist('tenant_carrier_id[]'))
     default_ids = ",".join(request.form.getlist('default_cl_id[]'))
 
-    print(f"Updating Rule: {mapping_id}, RuleID: {rule_id}, Desc: {description}, Tenant: {tenant_id}")
+    print(f"Updating Rule: {mapping_id}, RuleID: {rule_id}, CarrierID: {carrier_id}, Tenant: {tenant_id}")
     
     # We should also update the master rule details
     master_data = {
@@ -991,7 +1011,7 @@ def tenant_sip_rule_update(mapping_id):
         'recording_flag': 1 if request.form.get('recording_flag_toggle') == 'on' else 0
     }
     
-    success, error = db.update_sip_rule_full(int(mapping_id), rule_id, description, call_type, service_id, master_data)
+    success, error = db.update_sip_rule_full(int(mapping_id), rule_id, description, call_type, service_id, carrier_id, master_data)
     if not success: print(f"Update failed: {error}")
     
     if success:
@@ -1005,11 +1025,13 @@ def tenant_sip_rule_update(mapping_id):
 @app.route("/tenant/<tenant_id>/sip-rule", methods=['POST'])
 def tenant_sip_rule_add(tenant_id):
     form_mode = request.form.get('form_mode')
+    carrier_id = request.form.get('carrier_id')
+    rule_name = request.form.get('master_description')
     
     if form_mode == "new":
         rule_data = {
-            'description': request.form.get('master_description'),
-            'mapping_desc': request.form.get('mapping_description'),
+            'description': rule_name,
+            'mapping_desc': rule_name,
             'rule_action': 'ALLOW',
             'carrier_search_mode': request.form.get('carrier_search_mode'),
             'b_party_id': ",".join(request.form.getlist('b_party_id[]')),
@@ -1018,11 +1040,15 @@ def tenant_sip_rule_add(tenant_id):
             'default_cl_id': ",".join(request.form.getlist('default_cl_id[]')),
             'recording_flag': 1 if request.form.get('recording_flag_toggle') == 'on' else 0
         }
-        success, error = db.create_and_map_rule(tenant_id, rule_data, request.form.get('call_type'), request.form.get('service_id'))
+        success, error = db.create_and_map_rule(tenant_id, rule_data, request.form.get('call_type'), request.form.get('service_id'), carrier_id)
     else:
         rule_id = request.form.get('rule_id')
-        description = request.form.get('mapping_description')
-        success, error = db.add_sip_rule(tenant_id, rule_id, request.form.get('call_type'), request.form.get('service_id'), description)
+        # In 'existing' mode, we might want to fetch the rule name from DB if not provided in form
+        if not rule_name and rule_id:
+            master = db.get_rule_details(rule_id)
+            rule_name = master['DESCRIPTION'] if master else 'Linked Rule'
+            
+        success, error = db.add_sip_rule(tenant_id, rule_id, request.form.get('call_type'), request.form.get('service_id'), carrier_id, rule_name)
     
     if success:
         from flask import make_response

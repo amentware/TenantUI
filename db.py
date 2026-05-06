@@ -45,10 +45,12 @@ def get_sip_rules_for_tenant(tenant_id):
                       R.DESCRIPTION as MASTER_DESC, R.RULE_ACTION, M.CALL_TYPE, 
                       S.SERVICE_TYPE, R.CARRIER_SEARCH_MODE,
                       R.B_PARTY_CARRIER_MAPPING_ID, R.MSRN_CARRIER_MAPPING_ID,
-                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG
+                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG,
+                      C.DESCRIPTION as CARRIER_NAME
                FROM TENANT_SIP_RULE_MAPPING M
                JOIN SIP_RULE_MASTER R ON M.RULE_ID = R.RULE_ID
                JOIN SERVICE_MASTER  S ON M.SERVICE_ID = S.SERVICE_ID
+               LEFT JOIN CARRIER_MASTER C ON M.CARRIER_ID = C.CARRIER_ID
                WHERE M.TENANT_ID = ?
                ORDER BY R.RULE_ID""",
             (tenant_id,)
@@ -90,15 +92,15 @@ def get_all_services():
         rows = conn.execute("SELECT SERVICE_ID, SERVICE_TYPE FROM SERVICE_MASTER").fetchall()
     return [dict(r) for r in rows]
 
-def add_sip_rule(tenant_id, rule_id, call_type, service_id, description):
+def add_sip_rule(tenant_id, rule_id, call_type, service_id, carrier_id, description):
     import datetime
     try:
         with get_conn() as conn:
             conn.execute(
                 """INSERT INTO TENANT_SIP_RULE_MAPPING
-                   (TENANT_ID, RULE_ID, DESCRIPTION, CALL_TYPE, SERVICE_ID, CREATED_AT)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (tenant_id, rule_id, description, call_type, service_id,
+                   (TENANT_ID, RULE_ID, DESCRIPTION, CALL_TYPE, SERVICE_ID, CARRIER_ID, CREATED_AT)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (tenant_id, rule_id, description, call_type, service_id, carrier_id,
                  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
         return True, None
@@ -109,7 +111,7 @@ def delete_sip_rule(mapping_id):
     with get_conn() as conn:
         conn.execute("DELETE FROM TENANT_SIP_RULE_MAPPING WHERE MAPPING_ID=?", (mapping_id,))
 
-def create_and_map_rule(tenant_id, rule_data, call_type, service_id):
+def create_and_map_rule(tenant_id, rule_data, call_type, service_id, carrier_id):
     import datetime
     conn = get_conn()
     try:
@@ -131,10 +133,10 @@ def create_and_map_rule(tenant_id, rule_data, call_type, service_id):
             # 2. Map it to the tenant
             conn.execute(
                 """INSERT INTO TENANT_SIP_RULE_MAPPING
-                   (TENANT_ID, RULE_ID, DESCRIPTION, CALL_TYPE, SERVICE_ID, CREATED_AT)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (TENANT_ID, RULE_ID, DESCRIPTION, CALL_TYPE, SERVICE_ID, CARRIER_ID, CREATED_AT)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (tenant_id, new_rule_id, rule_data['mapping_desc'], 
-                 call_type, service_id,
+                 call_type, service_id, carrier_id,
                  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
         return True, None
@@ -156,15 +158,15 @@ def get_rule_mapping(mapping_id):
         """, (mapping_id,)).fetchone()
         return dict(row) if row else None
 
-def update_sip_rule_full(mapping_id, rule_id, description, call_type, service_id, master_data):
+def update_sip_rule_full(mapping_id, rule_id, description, call_type, service_id, carrier_id, master_data):
     with get_conn() as conn:
         try:
             # 1. Update Mapping
             conn.execute("""
                 UPDATE TENANT_SIP_RULE_MAPPING
-                SET RULE_ID = ?, DESCRIPTION = ?, CALL_TYPE = ?, SERVICE_ID = ?
+                SET RULE_ID = ?, DESCRIPTION = ?, CALL_TYPE = ?, SERVICE_ID = ?, CARRIER_ID = ?
                 WHERE MAPPING_ID = ?
-            """, (rule_id, description, call_type, service_id, mapping_id))
+            """, (rule_id, description, call_type, service_id, carrier_id, mapping_id))
             
             # 2. Update Master Rule (associated with this mapping)
             conn.execute("""
@@ -189,6 +191,11 @@ def get_all_lists(list_type=None):
             rows = conn.execute("SELECT * FROM LIST_MASTER WHERE LIST_TYPE = ?", (list_type,)).fetchall()
         else:
             rows = conn.execute("SELECT * FROM LIST_MASTER").fetchall()
+    return [dict(r) for r in rows]
+
+def get_all_carriers():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT * FROM CARRIER_MASTER ORDER BY DESCRIPTION").fetchall()
     return [dict(r) for r in rows]
 
 def create_list(name, list_type, details):
