@@ -45,10 +45,18 @@ def get_sip_rules_for_tenant(tenant_id):
                       R.DESCRIPTION as MASTER_DESC, R.RULE_ACTION, M.CALL_TYPE, 
                       S.SERVICE_TYPE, R.CARRIER_SEARCH_MODE,
                       R.B_PARTY_CARRIER_MAPPING_ID, R.MSRN_CARRIER_MAPPING_ID,
-                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG
+                      R.TENANT_CARRIER_MAPPING_ID, R.DEFAULT_CARRIER_LIST_ID, R.RECORDING_FLAG,
+                      LB.LIST_NAME as B_PARTY_LIST_NAME,
+                      LM.LIST_NAME as MSRN_LIST_NAME,
+                      LT.LIST_NAME as TENANT_LIST_NAME,
+                      LD.LIST_NAME as DEFAULT_LIST_NAME
                FROM TENANT_SIP_RULE_MAPPING M
                JOIN SIP_RULE_MASTER R ON M.RULE_ID = R.RULE_ID
                JOIN SERVICE_MASTER  S ON M.SERVICE_ID = S.SERVICE_ID
+               LEFT JOIN LIST_MASTER LB ON R.B_PARTY_CARRIER_MAPPING_ID = LB.LIST_ID
+               LEFT JOIN LIST_MASTER LM ON R.MSRN_CARRIER_MAPPING_ID = LM.LIST_ID
+               LEFT JOIN LIST_MASTER LT ON R.TENANT_CARRIER_MAPPING_ID = LT.LIST_ID
+               LEFT JOIN LIST_MASTER LD ON R.DEFAULT_CARRIER_LIST_ID = LD.LIST_ID
                WHERE M.TENANT_ID = ?
                ORDER BY R.RULE_ID""",
             (tenant_id,)
@@ -148,3 +156,53 @@ def update_sip_rule(mapping_id, rule_id, description, call_type, service_id):
             return True, None
         except Exception as e:
             return False, str(e)
+
+# ── List Management ─────────────────────────────────────
+def get_all_lists(list_type=None):
+    with get_conn() as conn:
+        if list_type:
+            rows = conn.execute("SELECT * FROM LIST_MASTER WHERE LIST_TYPE = ?", (list_type,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM LIST_MASTER").fetchall()
+    return [dict(r) for r in rows]
+
+def create_list(name, list_type, details):
+    """
+    details is a list of tuples/dicts depending on type:
+    BPARTY: [(destination_number, destination_type), ...]
+    MSRN: [(msrn, msrn_type), ...]
+    TENANT: [tenant_id, ...]
+    """
+    with get_conn() as conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO LIST_MASTER (LIST_NAME, LIST_TYPE) VALUES (?, ?)", (name, list_type))
+            list_id = cursor.lastrowid
+            
+            if list_type == 'BPARTY':
+                for d_num, d_type in details:
+                    cursor.execute("INSERT INTO B_PARTY_LIST (ID, DESTINATION_NUMBER, DESTINATION_TYPE) VALUES (?, ?, ?)", (list_id, d_num, d_type))
+            elif list_type == 'MSRN':
+                for msrn, msrn_type in details:
+                    cursor.execute("INSERT INTO MSRN_LIST (ID, MSRN, MSRN_TYPE) VALUES (?, ?, ?)", (list_id, msrn, msrn_type))
+            elif list_type == 'TENANT':
+                for t_id in details:
+                    cursor.execute("INSERT INTO TENANT_GROUP (ID, TENANT_ID) VALUES (?, ?)", (list_id, t_id))
+            
+            conn.commit()
+            return True, list_id
+        except Exception as e:
+            conn.rollback()
+            return False, str(e)
+
+def get_list_details(list_id, list_type):
+    with get_conn() as conn:
+        if list_type == 'BPARTY':
+            rows = conn.execute("SELECT * FROM B_PARTY_LIST WHERE ID = ?", (list_id,)).fetchall()
+        elif list_type == 'MSRN':
+            rows = conn.execute("SELECT * FROM MSRN_LIST WHERE ID = ?", (list_id,)).fetchall()
+        elif list_type == 'TENANT':
+            rows = conn.execute("SELECT * FROM TENANT_GROUP WHERE ID = ?", (list_id,)).fetchall()
+        else:
+            return []
+    return [dict(r) for r in rows]

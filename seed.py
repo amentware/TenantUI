@@ -52,6 +52,35 @@ def setup_database():
             FOREIGN KEY (RULE_ID)    REFERENCES SIP_RULE_MASTER(RULE_ID),
             FOREIGN KEY (SERVICE_ID) REFERENCES SERVICE_MASTER(SERVICE_ID)
         );
+
+        CREATE TABLE IF NOT EXISTS LIST_MASTER (
+            LIST_ID     INTEGER PRIMARY KEY AUTOINCREMENT,
+            LIST_NAME   TEXT NOT NULL,
+            LIST_TYPE   TEXT NOT NULL -- BPARTY, MSRN, DEFAULT, TENANT
+        );
+
+        CREATE TABLE IF NOT EXISTS B_PARTY_LIST (
+            PK_ID               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID                  INTEGER NOT NULL,
+            DESTINATION_NUMBER  TEXT NOT NULL,
+            DESTINATION_TYPE    TEXT NOT NULL,
+            FOREIGN KEY (ID) REFERENCES LIST_MASTER(LIST_ID)
+        );
+
+        CREATE TABLE IF NOT EXISTS MSRN_LIST (
+            PK_ID               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID                  INTEGER NOT NULL,
+            MSRN                TEXT NOT NULL,
+            MSRN_TYPE           TEXT NOT NULL,
+            FOREIGN KEY (ID) REFERENCES LIST_MASTER(LIST_ID)
+        );
+
+        CREATE TABLE IF NOT EXISTS TENANT_GROUP (
+            PK_ID       INTEGER PRIMARY KEY AUTOINCREMENT,
+            ID          INTEGER NOT NULL,
+            TENANT_ID   TEXT NOT NULL,
+            FOREIGN KEY (ID) REFERENCES LIST_MASTER(LIST_ID)
+        );
     ''')
 
     # === SEED: SERVICE_MASTER ===
@@ -140,6 +169,35 @@ def setup_database():
            VALUES (?, ?, ?, ?, ?, ?)''',
         mapping_rows
     )
+
+    # === SEED: LIST_MASTER & LISTS ===
+    list_masters = [
+        (101, 'UK B-PARTY LIST', 'BPARTY'),
+        (201, 'NETHERLANDS MSRN', 'MSRN'),
+        (202, 'UK MSRN', 'MSRN'),
+        (306, 'GLOBAL DEFAULT CARRIER', 'DEFAULT'),
+        (401, 'TENANT GROUP ALPHA', 'TENANT')
+    ]
+    c.executemany('INSERT OR IGNORE INTO LIST_MASTER (LIST_ID, LIST_NAME, LIST_TYPE) VALUES (?, ?, ?)', list_masters)
+
+    b_party_details = [
+        (101, '44794?%', 'SERIES'),
+        (101, '44795?%', 'SERIES'),
+        (101, '44796?%', 'SERIES')
+    ]
+    c.executemany('INSERT OR IGNORE INTO B_PARTY_LIST (ID, DESTINATION_NUMBER, DESTINATION_TYPE) VALUES (?, ?, ?)', b_party_details)
+
+    msrn_details = [
+        (201, '3165302?%', 'SERIES'),
+        (201, '3165304?%', 'SERIES'),
+        (202, '44795?%', 'SERIES')
+    ]
+    c.executemany('INSERT OR IGNORE INTO MSRN_LIST (ID, MSRN, MSRN_TYPE) VALUES (?, ?, ?)', msrn_details)
+
+    tenant_group_details = [
+        (401, 'TEN-0004')
+    ]
+    c.executemany('INSERT OR IGNORE INTO TENANT_GROUP (ID, TENANT_ID) VALUES (?, ?)', tenant_group_details)
 
     conn.commit()
     conn.close()

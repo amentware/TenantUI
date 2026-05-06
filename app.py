@@ -425,11 +425,11 @@ def sip_rules_partial(tenant_id):
         
         mode_val = "N/A"
         if r['CARRIER_SEARCH_MODE'] == 'BPARTY':
-            mode_val = f"<span class='text-xs text-gray-500 block'>B-Party:</span> {r['B_PARTY_CARRIER_MAPPING_ID']}"
+            mode_val = f"<span class='text-xs text-gray-500 block'>B-Party:</span> {r['B_PARTY_LIST_NAME'] or r['B_PARTY_CARRIER_MAPPING_ID']}"
         elif r['CARRIER_SEARCH_MODE'] == 'MSRN':
-            mode_val = f"<span class='text-xs text-gray-500 block'>MSRN:</span> {r['MSRN_CARRIER_MAPPING_ID']}"
+            mode_val = f"<span class='text-xs text-gray-500 block'>MSRN:</span> {r['MSRN_LIST_NAME'] or r['MSRN_CARRIER_MAPPING_ID']}"
         elif r['CARRIER_SEARCH_MODE'] == 'DEFAULT':
-            mode_val = f"<span class='text-xs text-gray-500 block'>Default:</span> {r['DEFAULT_CARRIER_LIST_ID']}"
+            mode_val = f"<span class='text-xs text-gray-500 block'>Default:</span> {r['DEFAULT_LIST_NAME'] or r['DEFAULT_CARRIER_LIST_ID']}"
 
         rows += f"""
         <tr class="border-b border-gray-100 last:border-0 hover:bg-gray-50">
@@ -594,20 +594,51 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
 
                                     <div id="carrier-id-container" class="p-4 bg-gray-50 rounded-xl border border-gray-100">
                                         <div id="field-DEFAULT">
-                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Default Carrier List ID</label>
-                                            <input type="text" name="default_cl_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">Default Carrier List</label>
+                                            </div>
+                                            <div id="default-list-container"></div>
+                                            <script>
+                                                initCustomSelect('default-list-container', [
+                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('DEFAULT')])}
+                                                ], {{name: 'default_cl_id', placeholder: 'Select Default List...', defaultValue: '{mapping["DEFAULT_CARRIER_LIST_ID"] if mapping else ""}'}});
+                                            </script>
                                         </div>
                                         <div id="field-BPARTY" class="hidden">
-                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">B-Party Mapping ID</label>
-                                            <input type="text" name="b_party_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">B-Party Mapping</label>
+                                                <button type="button" hx-get="/list/add?type=BPARTY" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+                                            </div>
+                                            <div id="bparty-list-container"></div>
+                                            <script>
+                                                initCustomSelect('bparty-list-container', [
+                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('BPARTY')])}
+                                                ], {{name: 'b_party_id', placeholder: 'Select B-Party List...', defaultValue: '{mapping["B_PARTY_CARRIER_MAPPING_ID"] if mapping else ""}'}});
+                                            </script>
                                         </div>
                                         <div id="field-MSRN" class="hidden">
-                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">MSRN Mapping ID</label>
-                                            <input type="text" name="msrn_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">MSRN Mapping</label>
+                                                <button type="button" hx-get="/list/add?type=MSRN" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+                                            </div>
+                                            <div id="msrn-list-container"></div>
+                                            <script>
+                                                initCustomSelect('msrn-list-container', [
+                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('MSRN')])}
+                                                ], {{name: 'msrn_id', placeholder: 'Select MSRN List...', defaultValue: '{mapping["MSRN_CARRIER_MAPPING_ID"] if mapping else ""}'}});
+                                            </script>
                                         </div>
                                         <div id="field-TENANT" class="hidden">
-                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Tenant Carrier Mapping ID</label>
-                                            <input type="text" name="tenant_carrier_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                            <div class="flex justify-between items-center mb-1">
+                                                <label class="block text-[10px] font-bold text-blue-600 uppercase">Tenant Group Mapping</label>
+                                                <button type="button" hx-get="/list/add?type=TENANT" hx-target="body" hx-swap="beforeend" class="text-[10px] text-blue-600 hover:underline font-bold">+ New List</button>
+                                            </div>
+                                            <div id="tenant-list-container"></div>
+                                            <script>
+                                                initCustomSelect('tenant-list-container', [
+                                                    {", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in db.get_all_lists('TENANT')])}
+                                                ], {{name: 'tenant_carrier_id', placeholder: 'Select Tenant Group...', defaultValue: '{mapping["TENANT_CARRIER_MAPPING_ID"] if mapping else ""}'}});
+                                            </script>
                                         </div>
                                     </div>
                                 </div>
@@ -880,6 +911,181 @@ def tenant_sip_rule_add(tenant_id):
         return resp
     else:
         return sip_rule_modal(tenant_id, error=error, mode=form_mode)
+
+@app.route("/list/add")
+def list_add_modal():
+    list_type = request.args.get('type', 'BPARTY')
+    return list_modal(list_type)
+
+@app.route("/list/create", methods=['POST'])
+def list_create():
+    list_name = request.form.get('list_name')
+    list_type = request.form.get('list_type')
+    
+    # Extract details based on type
+    details = []
+    if list_type == 'BPARTY':
+        nums = request.form.getlist('destination_number[]')
+        types = request.form.getlist('destination_type[]')
+        for n, t in zip(nums, types):
+            if n: details.append((n, t))
+    elif list_type == 'MSRN':
+        msrns = request.form.getlist('msrn[]')
+        types = request.form.getlist('msrn_type[]')
+        for m, t in zip(msrns, types):
+            if m: details.append((m, t))
+    elif list_type == 'TENANT':
+        t_ids = request.form.getlist('tenant_id[]')
+        for tid in t_ids:
+            if tid: details.append(tid)
+
+    success, result = db.create_list(list_name, list_type, details)
+    
+    if success:
+        # Return a script to close the sub-modal and update the dropdown in the parent modal
+        # We need to know which container to update based on list_type
+        container_id = {
+            'BPARTY': 'bparty-list-container',
+            'MSRN': 'msrn-list-container',
+            'TENANT': 'tenant-list-container'
+        }.get(list_type)
+        
+        # Re-fetch all lists of this type
+        all_lists = db.get_all_lists(list_type)
+        options_js = ", ".join([f'{{id: "{l["LIST_ID"]}", text: "{l["LIST_NAME"]}"}}' for l in all_lists])
+        
+        script = f"""
+        <script>
+            document.getElementById('list-modal').remove();
+            initCustomSelect('{container_id}', [{options_js}], {{
+                name: '{'b_party_id' if list_type == 'BPARTY' else 'msrn_id' if list_type == 'MSRN' else 'tenant_carrier_id'}',
+                placeholder: 'Select {list_type} List...',
+                defaultValue: '{result}'
+            }});
+            showToast('List "{list_name}" created successfully');
+        </script>
+        """
+        return script
+    else:
+        return f'<script>showToast("Error: {result}", "error");</script>'
+
+def list_modal(list_type):
+    title = f"Create New {list_type} List"
+    
+    row_template = ""
+    if list_type == 'BPARTY':
+        row_template = """
+        <div class="grid grid-cols-12 gap-4 mb-3 list-row">
+            <div class="col-span-8">
+                <input type="text" name="destination_number[]" placeholder="Destination Number (e.g. 44794?%)" 
+                       class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+            </div>
+            <div class="col-span-3">
+                <select name="destination_type[]" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                    <option value="SERIES">SERIES</option>
+                    <option value="EXACT">EXACT</option>
+                </select>
+            </div>
+            <div class="col-span-1 flex items-center">
+                <button type="button" onclick="this.closest('.list-row').remove()" class="text-red-400 hover:text-red-600">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+        """
+    elif list_type == 'MSRN':
+        row_template = """
+        <div class="grid grid-cols-12 gap-4 mb-3 list-row">
+            <div class="col-span-8">
+                <input type="text" name="msrn[]" placeholder="MSRN (e.g. 3165302?%)" 
+                       class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+            </div>
+            <div class="col-span-3">
+                <select name="msrn_type[]" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                    <option value="SERIES">SERIES</option>
+                    <option value="EXACT">EXACT</option>
+                </select>
+            </div>
+            <div class="col-span-1 flex items-center">
+                <button type="button" onclick="this.closest('.list-row').remove()" class="text-red-400 hover:text-red-600">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+        """
+    elif list_type == 'TENANT':
+        row_template = """
+        <div class="grid grid-cols-12 gap-4 mb-3 list-row">
+            <div class="col-span-11">
+                <input type="text" name="tenant_id[]" placeholder="Tenant ID (e.g. TEN-10004)" 
+                       class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+            </div>
+            <div class="col-span-1 flex items-center">
+                <button type="button" onclick="this.closest('.list-row').remove()" class="text-red-400 hover:text-red-600">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </div>
+        """
+
+    return f"""
+    <div id="list-modal" class="fixed inset-0 z-[100] overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity bg-black/60 backdrop-blur-sm" onclick="document.getElementById('list-modal').remove()"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full overflow-hidden">
+                <form hx-post="/list/create" hx-target="this" hx-swap="outerHTML">
+                    <input type="hidden" name="list_type" value="{list_type}">
+                    <div class="bg-white px-8 pt-8 pb-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-xl font-bold text-gray-900">{title}</h3>
+                            <button type="button" onclick="document.getElementById('list-modal').remove()" class="text-gray-400 hover:text-gray-500">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">List Name</label>
+                            <input type="text" name="list_name" placeholder="e.g. Netherlands MSRN List" required
+                                   class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                        </div>
+
+                        <div class="border-t pt-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest">List Entries</h4>
+                                <button type="button" onclick="addListRow()" class="text-xs bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg font-bold hover:bg-blue-100 transition-all flex items-center">
+                                    <i class="fa-solid fa-plus mr-1.5"></i> Add Entry
+                                </button>
+                            </div>
+                            
+                            <div id="list-rows-container">
+                                {row_template}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 px-8 py-6 flex flex-row-reverse space-x-reverse space-x-3">
+                        <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">
+                            Create List
+                        </button>
+                        <button type="button" onclick="document.getElementById('list-modal').remove()" class="w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-100 transition-all">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+            function addListRow() {{
+                const container = document.getElementById('list-rows-container');
+                const temp = document.createElement('div');
+                temp.innerHTML = `{row_template.replace('`', '\\`').replace('$', '\\$')}`;
+                container.appendChild(temp.firstElementChild);
+            }}
+        </script>
+    </div>
+    """
 
 @app.route("/sip-rule/<mapping_id>", methods=['DELETE'])
 def tenant_sip_rule_delete(mapping_id):
