@@ -21,9 +21,21 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
         .htmx-indicator {{ display: none; }}
         .htmx-request .htmx-indicator {{ display: inline; }}
         .htmx-request.htmx-indicator {{ display: inline; }}
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {{ width: 6px; }}
+        ::-webkit-scrollbar-track {{ background: #f1f1f1; }}
+        ::-webkit-scrollbar-thumb {{ background: #cbd5e1; border-radius: 10px; }}
+        ::-webkit-scrollbar-thumb:hover {{ background: #94a3b8; }}
+
+        /* Toast Animation */
+        @keyframes slideIn {{ from {{ transform: translateX(100%); opacity: 0; }} to {{ transform: translateX(0); opacity: 1; }} }}
+        .toast-enter {{ animation: slideIn 0.3s ease-out forwards; }}
     </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans antialiased">
+    <div id="toast-container" class="fixed top-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none"></div>
+
     <div class="flex h-screen overflow-hidden">
         {sidebar(active_sidebar)}
         <main id="main-content" class="flex-1 overflow-y-auto p-8">
@@ -31,6 +43,156 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
         </main>
     </div>
     <div id="dialog-container"></div>
+
+    <script>
+        let lastToastMsg = '';
+        let lastToastTime = 0;
+        function showToast(message, type = 'success') {{
+            const now = Date.now();
+            if (message === lastToastMsg && (now - lastToastTime) < 500) return;
+            lastToastMsg = message;
+            lastToastTime = now;
+
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
+            const bgColor = type === 'success' ? 'bg-green-600' : 'bg-red-600';
+            
+            toast.className = `pointer-events-auto flex items-center p-4 min-w-[300px] shadow-2xl rounded-xl text-white toast-enter ${{bgColor}}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${{icon}} text-xl mr-3"></i>
+                <div class="flex-1 font-bold text-sm text-white">${{message}}</div>
+                <button onclick="this.parentElement.remove()" class="ml-4 opacity-70 hover:opacity-100 transition-opacity">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            `;
+            container.appendChild(toast);
+            setTimeout(() => {{
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.5s ease-in';
+                setTimeout(() => toast.remove(), 500);
+            }}, 4000);
+        }}
+
+        function showConfirm(message, actionUrl, targetId, tenantId) {{
+            const container = document.getElementById('dialog-container');
+            const dialog = document.createElement('div');
+            dialog.id = 'confirm-dialog';
+            dialog.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm';
+            dialog.innerHTML = `
+                <div class="bg-white rounded-2xl p-8 max-w-sm w-full shadow-2xl transform transition-all scale-100">
+                    <div class="flex flex-col items-center text-center">
+                        <div class="w-16 h-16 bg-red-50 text-red-600 rounded-full flex items-center justify-center mb-4 text-2xl">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </div>
+                        <h3 class="text-xl font-bold text-gray-900 mb-2">Are you sure?</h3>
+                        <p class="text-gray-500 text-sm mb-8">${{message}}</p>
+                        <div class="flex w-full gap-3">
+                            <button onclick="document.getElementById('confirm-dialog').remove()" 
+                                    class="flex-1 px-4 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-all">
+                                Cancel
+                            </button>
+                            <button hx-delete="${{actionUrl}}?tenant_id=${{tenantId}}" hx-target="${{targetId}}" 
+                                    hx-on:htmx:after-request="document.getElementById('confirm-dialog').remove(); showToast('Deleted successfully')"
+                                    class="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all">
+                                Yes, Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(dialog);
+            htmx.process(dialog);
+        }}
+
+        // Versatile Custom Select Helper (Searchable or Simple)
+        function initCustomSelect(containerId, options, config = {{}}) {{
+            const {{ onSelect, name, placeholder = 'Select option...', searchable = true, defaultValue = '' }} = config;
+            const container = document.getElementById(containerId);
+            const inputId = containerId + '-input';
+            const listId = containerId + '-list';
+            const hiddenId = containerId + '-hidden';
+            
+            // Find default text
+            let defaultText = '';
+            if (defaultValue) {{
+                const found = options.find(o => o.id == defaultValue);
+                if (found) defaultText = found.text;
+            }}
+
+            container.innerHTML = `
+                <div class="relative w-full custom-select-group">
+                    <div class="relative">
+                        ${{searchable ? `<i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>` : ''}}
+                        <input type="text" id="${{inputId}}" placeholder="${{placeholder}}" 
+                               value="${{defaultText}}"
+                               readonly="${{!searchable}}"
+                               class="w-full ${{searchable ? 'pl-11' : 'pl-4'}} pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm cursor-pointer transition-all"
+                               autocomplete="off">
+                        <i class="fa-solid fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-[10px] pointer-events-none"></i>
+                        <input type="hidden" name="${{name}}" id="${{hiddenId}}" value="${{defaultValue}}">
+                    </div>
+                    <div id="${{listId}}" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-[60] max-h-60 overflow-y-auto">
+                        ${{options.map(o => `
+                            <div class="px-4 py-2.5 hover:bg-blue-50 cursor-pointer text-sm transition-colors border-b last:border-0 border-gray-50 flex items-center group" 
+                                 onclick="selectCustomOption('${{containerId}}', '${{o.id}}', '${{o.text}}', '${{onSelect}}')">
+                                <span class="text-gray-700 group-hover:text-blue-700">${{o.text}}</span>
+                            </div>
+                        `).join('')}}
+                    </div>
+                </div>
+            `;
+
+            const input = document.getElementById(inputId);
+            const list = document.getElementById(listId);
+
+            const toggle = () => list.classList.toggle('hidden');
+            input.addEventListener('click', toggle);
+            
+            if (searchable) {{
+                input.addEventListener('input', (e) => {{
+                    const val = e.target.value.toLowerCase();
+                    const items = list.querySelectorAll('div');
+                    items.forEach(item => {{
+                        const text = item.innerText.toLowerCase();
+                        item.style.display = text.includes(val) ? 'block' : 'none';
+                    }});
+                    list.classList.remove('hidden');
+                }});
+            }}
+
+            document.addEventListener('click', (e) => {{
+                if (!container.contains(e.target)) list.classList.add('hidden');
+            }});
+        }}
+
+        function selectCustomOption(containerId, id, text, onSelect) {{
+            const input = document.getElementById(containerId + '-input');
+            const hidden = document.getElementById(containerId + '-hidden');
+            const list = document.getElementById(containerId + '-list');
+            
+            input.value = text;
+            hidden.value = id;
+            list.classList.add('hidden');
+            
+            // Trigger onchange logic if it exists (like for Carrier Search Mode)
+            if (hidden.name === 'carrier_search_mode') {{
+                toggleCarrierFields(id);
+            }}
+            
+            if (onSelect && onSelect !== 'undefined') {{
+                htmx.ajax('GET', `${{onSelect}}?rule_id=${{id}}`, '#dynamic-details-view');
+            }}
+        }}
+
+        // Listen for HTMX events to show toasts from backend (using headers)
+        document.addEventListener('htmx:afterOnLoad', function(evt) {{
+            const msg = evt.detail.xhr.getResponseHeader('X-Toast-Message');
+            const type = evt.detail.xhr.getResponseHeader('X-Toast-Type') || 'success';
+            if (msg) showToast(msg, type);
+        }});
+    </script>
 </body>
 </html>
 """
@@ -300,11 +462,17 @@ def sip_rules_partial(tenant_id):
             <td class="px-6 py-4 text-center">
                 <i class="fa-solid fa-microphone-lines {rec_color} text-lg" title="{'Recording Enabled' if r['RECORDING_FLAG'] else 'Disabled'}"></i>
             </td>
-            <td class="px-6 py-4 text-right">
-                <button hx-delete="/sip-rule/{r['MAPPING_ID']}?tenant_id={tenant_id}" hx-target="#tab-content" hx-confirm="Are you sure you want to remove this rule mapping?"
-                        class="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-all">
-                    <i class="fa-solid fa-trash-can"></i>
-                </button>
+            <td class="px-6 py-4 text-center">
+                <div class="flex items-center justify-center space-x-3">
+                    <button hx-get="/tenant/{tenant_id}/sip-rule/edit/{r['MAPPING_ID']}" hx-target="#dialog-container" hx-swap="innerHTML"
+                            class="p-1.5 text-gray-400 hover:text-blue-600 transition-colors">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    <button onclick="showConfirm('Are you sure you want to remove this rule mapping?', '/sip-rule/{r['MAPPING_ID']}', '#tab-content', '{tenant_id}')"
+                            class="p-1.5 text-gray-400 hover:text-red-600 transition-colors">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
             </td>
         </tr>
         """
@@ -340,18 +508,14 @@ def sip_rules_partial(tenant_id):
     </div>
     """
 
-def sip_rule_modal(tenant_id, error=None, mode="new"):
+def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
     rules = db.get_all_rules()
     services = db.get_all_services()
     
-    rule_options = '<option value="">-- Select Existing Rule --</option>'
-    for r in rules:
-        rule_options += f'<option value="{r["RULE_ID"]}">{r["RULE_ID"]} - {r["DESCRIPTION"]}</option>'
-    
-    svc_options = ""
-    for s in services:
-        if s["SERVICE_TYPE"] in ["MO", "MT"]:
-            svc_options += f'<option value="{s["SERVICE_ID"]}">{s["SERVICE_TYPE"]}</option>'
+    mapping = None
+    if mapping_id:
+        mapping = db.get_rule_mapping(mapping_id)
+        mode = "existing" # Editing always uses the existing rule view
 
     error_alert = ""
     if error:
@@ -363,18 +527,22 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
         """
 
     is_new = mode == "new"
+    is_edit = mapping_id is not None
     
+    form_action = f"/sip-rule/update/{mapping_id}?tenant_id={tenant_id}" if is_edit else f"/tenant/{tenant_id}/sip-rule"
+    title = "Edit SIP Routing Rule" if is_edit else "Add SIP Routing Rule"
+
     return f"""
     <div id="modal" class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
         <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             <div class="fixed inset-0 transition-opacity bg-black/40 backdrop-blur-sm" hx-on:click="document.getElementById('modal').remove()"></div>
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full overflow-hidden">
-                <form hx-post="/tenant/{tenant_id}/sip-rule" hx-target="#sip-rule-table-wrapper" hx-swap="outerHTML">
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full overflow-hidden">
+                <form hx-post="{form_action}" hx-target="#sip-rule-table-wrapper" hx-swap="outerHTML">
                     <div class="bg-white px-8 pt-8 pb-4 max-h-[80vh] overflow-y-auto">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-xl font-bold text-gray-900">Add SIP Routing Rule</h3>
+                            <h3 class="text-xl font-bold text-gray-900">{title}</h3>
                             <button type="button" hx-on:click="document.getElementById('modal').remove()" class="text-gray-400 hover:text-gray-500">
                                 <i class="fa-solid fa-xmark text-xl"></i>
                             </button>
@@ -382,6 +550,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                         
                         {error_alert}
 
+                        {f'''
                         <div class="flex p-1 bg-gray-100 rounded-xl mb-6 max-w-md">
                             <button type="button" hx-get="/tenant/{tenant_id}/sip-rule/add?mode=new" hx-target="#modal" hx-swap="outerHTML"
                                     class="flex-1 py-2 text-sm font-bold rounded-lg transition-all {'bg-white shadow text-blue-600' if is_new else 'text-gray-500 hover:text-gray-700'}">
@@ -392,6 +561,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                                 Select Existing
                             </button>
                         </div>
+                        ''' if not is_edit else ''}
 
                         <input type="hidden" name="form_mode" value="{mode}">
 
@@ -409,13 +579,15 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Carrier Search Mode</label>
-                                            <select name="carrier_search_mode" onchange="toggleCarrierFields(this.value)"
-                                                    class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                                <option value="DEFAULT">DEFAULT</option>
-                                                <option value="BPARTY">BPARTY</option>
-                                                <option value="MSRN">MSRN</option>
-                                                <option value="TENANT">TENANT</option>
-                                            </select>
+                                            <div id="carrier-search-mode-container"></div>
+                                            <script>
+                                                initCustomSelect('carrier-search-mode-container', [
+                                                    {{id: 'DEFAULT', text: 'DEFAULT'}},
+                                                    {{id: 'BPARTY', text: 'BPARTY'}},
+                                                    {{id: 'MSRN', text: 'MSRN'}},
+                                                    {{id: 'TENANT', text: 'TENANT'}}
+                                                ], {{name: 'carrier_search_mode', searchable: false, defaultValue: 'DEFAULT'}});
+                                            </script>
                                         </div>
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Recording Flag</label>
@@ -460,17 +632,23 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
-                                            <select name="call_type" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                                                <option value="ONNET">ONNET</option>
-                                                <option value="OFFNET">OFFNET</option>
-                                                <option value="ALLCALL">ALLCALL</option>
-                                            </select>
+                                            <div id="call-type-container"></div>
+                                            <script>
+                                                initCustomSelect('call-type-container', [
+                                                    {{id: 'ONNET', text: 'ONNET'}},
+                                                    {{id: 'OFFNET', text: 'OFFNET'}},
+                                                    {{id: 'ALLCALL', text: 'ALLCALL'}}
+                                                ], {{name: 'call_type', searchable: false, placeholder: 'Select type...'}});
+                                            </script>
                                         </div>
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Service</label>
-                                            <select name="service_id" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                                                {svc_options}
-                                            </select>
+                                            <div id="service-container"></div>
+                                            <script>
+                                                initCustomSelect('service-container', [
+                                                    {", ".join([f'{{id: "{s["SERVICE_ID"]}", text: "{s["SERVICE_TYPE"]}"}}' for s in services if s["SERVICE_TYPE"] in ["MO", "MT"]])}
+                                                ], {{name: 'service_id', searchable: false, defaultValue: 'MO'}});
+                                            </script>
                                         </div>
                                     </div>
                                 </div>
@@ -480,38 +658,50 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                                 <div class="space-y-4">
                                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Selection</h4>
                                     <div>
-                                        <label class="block text-sm font-bold text-gray-700 mb-2">Select Master Rule</label>
-                                        <select name="rule_id" required
-                                                hx-get="/rule/details/partial" hx-target="#dynamic-details-view" hx-trigger="change"
-                                                class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm">
-                                            {rule_options}
-                                        </select>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">Search Rule Master</label>
+                                        <div id="rule-search-container"></div>
+                                        <script>
+                                            initCustomSelect('rule-search-container', [
+                                                {", ".join([f'{{id: "{r["RULE_ID"]}", text: "{r["DESCRIPTION"]}"}}' for r in rules])}
+                                            ], {{
+                                                name: 'rule_id', 
+                                                onSelect: '/rule/details/partial', 
+                                                placeholder: 'Search rule by ID or description...',
+                                                defaultValue: '{mapping['RULE_ID'] if mapping else ''}'
+                                            }});
+                                        </script>
                                     </div>
-                                    <div id="dynamic-details-view" class="p-4 bg-blue-50/50 rounded-xl border border-blue-100 min-h-[140px] flex items-center justify-center">
-                                        <span class="text-xs text-blue-400 italic">Select a rule to preview configuration</span>
+                                    <div id="dynamic-details-view" class="p-4 bg-blue-50/50 rounded-xl border border-blue-100 min-h-[140px] flex items-center justify-center text-center">
+                                        {rule_details_partial(mapping['RULE_ID']) if mapping else '<span class="text-xs text-blue-400 italic">Search and select a rule to preview configuration</span>'}
                                     </div>
                                 </div>
                                 <div class="space-y-4 border-l pl-8">
                                     <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Tenant Mapping Info</h4>
                                     <div>
                                         <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mapping Description</label>
-                                        <input type="text" name="mapping_description" placeholder="Tenant specific name..." required
+                                        <input type="text" name="mapping_description" value="{mapping['DESCRIPTION'] if mapping else ''}" placeholder="Tenant specific name..." required
                                                class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
                                     </div>
                                     <div class="grid grid-cols-2 gap-4">
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
-                                            <select name="call_type" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                                                <option value="ONNET">ONNET</option>
-                                                <option value="OFFNET">OFFNET</option>
-                                                <option value="ALLCALL">ALLCALL</option>
-                                            </select>
+                                            <div id="existing-call-type-container"></div>
+                                            <script>
+                                                initCustomSelect('existing-call-type-container', [
+                                                    {{id: 'ONNET', text: 'ONNET'}},
+                                                    {{id: 'OFFNET', text: 'OFFNET'}},
+                                                    {{id: 'ALLCALL', text: 'ALLCALL'}}
+                                                ], {{name: 'call_type', searchable: false, placeholder: 'Select type...', defaultValue: '{mapping['CALL_TYPE'] if mapping else ''}'}});
+                                            </script>
                                         </div>
                                         <div>
                                             <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Service</label>
-                                            <select name="service_id" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                                                {svc_options}
-                                            </select>
+                                            <div id="existing-service-container"></div>
+                                            <script>
+                                                initCustomSelect('existing-service-container', [
+                                                    {", ".join([f'{{id: "{s["SERVICE_ID"]}", text: "{s["SERVICE_TYPE"]}"}}' for s in services if s["SERVICE_TYPE"] in ["MO", "MT"]])}
+                                                ], {{name: 'service_id', searchable: false, defaultValue: '{mapping['SERVICE_ID'] if mapping else 'MO'}'}});
+                                            </script>
                                         </div>
                                     </div>
                                 </div>
@@ -644,6 +834,27 @@ def rule_details_route():
     rule_id = request.args.get('rule_id')
     return rule_details_partial(rule_id)
 
+@app.route("/tenant/<tenant_id>/sip-rule/edit/<mapping_id>")
+def tenant_sip_rule_edit_modal(tenant_id, mapping_id):
+    return sip_rule_modal(tenant_id, mode="existing", mapping_id=mapping_id)
+
+@app.route("/sip-rule/update/<mapping_id>", methods=['POST'])
+def tenant_sip_rule_update(mapping_id):
+    tenant_id = request.args.get('tenant_id')
+    description = request.form.get('mapping_description')
+    call_type = request.form.get('call_type')
+    service_id = request.form.get('service_id')
+    
+    success, error = db.update_sip_rule(mapping_id, description, call_type, service_id)
+    
+    if success:
+        from flask import make_response
+        resp = make_response(sip_rules_partial(tenant_id) + '<script>document.getElementById("modal")?.remove();</script>')
+        resp.headers['X-Toast-Message'] = 'SIP Rule updated successfully'
+        return resp
+    else:
+        return sip_rule_modal(tenant_id, error=error, mode="existing", mapping_id=mapping_id)
+
 @app.route("/tenant/<tenant_id>/sip-rule", methods=['POST'])
 def tenant_sip_rule_add(tenant_id):
     form_mode = request.form.get('form_mode')
@@ -667,7 +878,10 @@ def tenant_sip_rule_add(tenant_id):
         success, error = db.add_sip_rule(tenant_id, rule_id, request.form.get('call_type'), request.form.get('service_id'), description)
     
     if success:
-        return sip_rules_partial(tenant_id) + '<script>document.getElementById("modal")?.remove();</script>'
+        from flask import make_response
+        resp = make_response(sip_rules_partial(tenant_id) + '<script>document.getElementById("modal")?.remove();</script>')
+        resp.headers['X-Toast-Message'] = 'SIP Rule added successfully'
+        return resp
     else:
         return sip_rule_modal(tenant_id, error=error, mode=form_mode)
 
