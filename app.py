@@ -393,18 +393,6 @@ def tenant_details_content(tenant_id):
                         </div>
                     </div>
                 </div>
-
-                <div class="bg-blue-600 rounded-xl shadow-lg p-6 text-white overflow-hidden relative">
-                    <div class="relative z-10">
-                        <h4 class="font-bold text-lg mb-2">System Health</h4>
-                        <p class="text-blue-100 text-sm mb-4">Real-time status for this tenant's SIP endpoints.</p>
-                        <div class="flex items-center space-x-2">
-                            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-                            <span class="text-xs font-medium">99.9% Uptime</span>
-                        </div>
-                    </div>
-                    <i class="fa-solid fa-chart-line absolute -right-4 -bottom-4 text-8xl text-blue-500 opacity-20"></i>
-                </div>
             </div>
 
             <!-- Right Panel: Tabs -->
@@ -430,7 +418,7 @@ def tenant_details_content(tenant_id):
 
 def sip_rules_partial(tenant_id):
     rules = db.get_sip_rules_for_tenant(tenant_id)
-    
+    print(f"Generating table for {tenant_id}, rule count: {len(rules)}")
     rows = ""
     for r in rules:
         rec_color = "text-red-500" if r['RECORDING_FLAG'] else "text-gray-300"
@@ -448,7 +436,7 @@ def sip_rules_partial(tenant_id):
             <td class="px-6 py-4 font-mono text-xs font-medium text-gray-900">{r['RULE_ID']}</td>
             <td class="px-6 py-4">
                 <p class="text-sm text-gray-900 font-bold">{r['MAPPING_DESC']}</p>
-                <p class="text-[10px] text-gray-400 mt-0.5">Master: {r['MASTER_DESC']}</p>
+                <p class="text-[10px] text-gray-400 mt-0.5">Rule: {r['MASTER_DESC']}</p>
                 <div class="flex space-x-2 mt-2">
                     <span class="text-[10px] uppercase font-bold bg-green-50 px-1 rounded text-green-700">{r['RULE_ACTION']}</span>
                     <span class="text-[10px] uppercase font-bold bg-gray-100 px-1 rounded text-gray-600">{r['CALL_TYPE']}</span>
@@ -464,7 +452,7 @@ def sip_rules_partial(tenant_id):
             </td>
             <td class="px-6 py-4 text-center">
                 <div class="flex items-center justify-center space-x-3">
-                    <button hx-get="/tenant/{tenant_id}/sip-rule/edit/{r['MAPPING_ID']}" hx-target="#dialog-container" hx-swap="innerHTML"
+                    <button onclick="document.getElementById('modal')?.remove(); htmx.ajax('GET', '/tenant/{tenant_id}/sip-rule/edit/{r['MAPPING_ID']}', {{target:'body', swap:'beforeend'}})"
                             class="p-1.5 text-gray-400 hover:text-blue-600 transition-colors">
                         <i class="fa-solid fa-pen-to-square"></i>
                     </button>
@@ -484,7 +472,8 @@ def sip_rules_partial(tenant_id):
     <div id="sip-rule-table-wrapper" class="flex flex-col h-full">
         <div class="flex justify-between items-center p-6 bg-white sticky top-0">
             <h4 class="font-bold text-gray-900">Tenant Routing Rules</h4>
-            <button hx-get="/tenant/{tenant_id}/sip-rule/add" hx-target="#dialog-container" 
+            <button hx-get="/tenant/{tenant_id}/sip-rule/add" hx-target="body" hx-swap="beforeend" 
+                    hx-on:htmx:before-request="document.getElementById('modal')?.remove()"
                     class="text-xs bg-gray-900 text-white px-3 py-2 rounded font-bold hover:bg-black transition-all">
                 ADD RULE
             </button>
@@ -509,13 +498,15 @@ def sip_rules_partial(tenant_id):
     """
 
 def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
+    print(f"Opening Modal: Tenant={tenant_id}, Mode={mode}, MappingID={mapping_id}")
     rules = db.get_all_rules()
     services = db.get_all_services()
     
     mapping = None
     if mapping_id:
         mapping = db.get_rule_mapping(mapping_id)
-        mode = "existing" # Editing always uses the existing rule view
+        print(f"Found mapping: {mapping is not None}")
+        mode = "existing"
 
     error_alert = ""
     if error:
@@ -538,7 +529,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new", mapping_id=None):
             <div class="fixed inset-0 transition-opacity bg-black/40 backdrop-blur-sm" hx-on:click="document.getElementById('modal').remove()"></div>
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full overflow-hidden">
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-5xl sm:w-full overflow-hidden">
                 <form hx-post="{form_action}" hx-target="#sip-rule-table-wrapper" hx-swap="outerHTML">
                     <div class="bg-white px-8 pt-8 pb-4 max-h-[80vh] overflow-y-auto">
                         <div class="flex justify-between items-center mb-6">
@@ -836,16 +827,21 @@ def rule_details_route():
 
 @app.route("/tenant/<tenant_id>/sip-rule/edit/<mapping_id>")
 def tenant_sip_rule_edit_modal(tenant_id, mapping_id):
-    return sip_rule_modal(tenant_id, mode="existing", mapping_id=mapping_id)
+    print(f"Route Hit: Edit Modal for {mapping_id}")
+    return sip_rule_modal(tenant_id, mode="existing", mapping_id=int(mapping_id))
 
 @app.route("/sip-rule/update/<mapping_id>", methods=['POST'])
 def tenant_sip_rule_update(mapping_id):
     tenant_id = request.args.get('tenant_id')
+    rule_id = int(request.form.get('rule_id')) if request.form.get('rule_id') else None
     description = request.form.get('mapping_description')
     call_type = request.form.get('call_type')
-    service_id = request.form.get('service_id')
+    service_id = int(request.form.get('service_id')) if request.form.get('service_id') else None
     
-    success, error = db.update_sip_rule(mapping_id, description, call_type, service_id)
+    print(f"Updating Rule: {mapping_id}, RuleID: {rule_id}, Desc: {description}, Tenant: {tenant_id}")
+    
+    success, error = db.update_sip_rule(int(mapping_id), rule_id, description, call_type, service_id)
+    if not success: print(f"Update failed: {error}")
     
     if success:
         from flask import make_response

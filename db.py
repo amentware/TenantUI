@@ -124,8 +124,7 @@ def create_and_map_rule(tenant_id, rule_data, call_type, service_id):
         conn.close()
 
 def get_rule_mapping(mapping_id):
-    conn = get_db()
-    try:
+    with get_conn() as conn:
         row = conn.execute("""
             SELECT m.*, r.DESCRIPTION as MASTER_DESC, r.CARRIER_SEARCH_MODE,
                    r.B_PARTY_CARRIER_MAPPING_ID, r.MSRN_CARRIER_MAPPING_ID,
@@ -136,20 +135,16 @@ def get_rule_mapping(mapping_id):
             WHERE m.MAPPING_ID = ?
         """, (mapping_id,)).fetchone()
         return dict(row) if row else None
-    finally:
-        conn.close()
 
-def update_sip_rule(mapping_id, description, call_type, service_id):
-    conn = get_db()
-    try:
-        conn.execute("""
-            UPDATE TENANT_SIP_RULE_MAPPING
-            SET DESCRIPTION = ?, CALL_TYPE = ?, SERVICE_ID = ?
-            WHERE MAPPING_ID = ?
-        """, (description, call_type, service_id, mapping_id))
-        conn.commit()
-        return True, None
-    except Exception as e:
-        return False, str(e)
-    finally:
-        conn.close()
+def update_sip_rule(mapping_id, rule_id, description, call_type, service_id):
+    with get_conn() as conn:
+        try:
+            conn.execute("""
+                UPDATE TENANT_SIP_RULE_MAPPING
+                SET RULE_ID = ?, DESCRIPTION = ?, CALL_TYPE = ?, SERVICE_ID = ?
+                WHERE MAPPING_ID = ?
+            """, (rule_id, description, call_type, service_id, mapping_id))
+            conn.commit()
+            return True, None
+        except Exception as e:
+            return False, str(e)
