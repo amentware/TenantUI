@@ -350,7 +350,8 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
     
     svc_options = ""
     for s in services:
-        svc_options += f'<option value="{s["SERVICE_ID"]}">{s["SERVICE_TYPE"]}</option>'
+        if s["SERVICE_TYPE"] in ["MO", "MT"]:
+            svc_options += f'<option value="{s["SERVICE_ID"]}">{s["SERVICE_TYPE"]}</option>'
 
     error_alert = ""
     if error:
@@ -369,9 +370,9 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
             <div class="fixed inset-0 transition-opacity bg-black/40 backdrop-blur-sm" hx-on:click="document.getElementById('modal').remove()"></div>
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+            <div class="inline-block align-bottom bg-white rounded-2xl text-left shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full overflow-hidden">
                 <form hx-post="/tenant/{tenant_id}/sip-rule" hx-target="#sip-rule-table-wrapper" hx-swap="outerHTML">
-                    <div class="bg-white px-8 pt-8 pb-4">
+                    <div class="bg-white px-8 pt-8 pb-4 max-h-[80vh] overflow-y-auto">
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-xl font-bold text-gray-900">Add SIP Routing Rule</h3>
                             <button type="button" hx-on:click="document.getElementById('modal').remove()" class="text-gray-400 hover:text-gray-500">
@@ -381,7 +382,7 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                         
                         {error_alert}
 
-                        <div class="flex p-1 bg-gray-100 rounded-xl mb-6">
+                        <div class="flex p-1 bg-gray-100 rounded-xl mb-6 max-w-md">
                             <button type="button" hx-get="/tenant/{tenant_id}/sip-rule/add?mode=new" hx-target="#modal" hx-swap="outerHTML"
                                     class="flex-1 py-2 text-sm font-bold rounded-lg transition-all {'bg-white shadow text-blue-600' if is_new else 'text-gray-500 hover:text-gray-700'}">
                                 Create New Rule
@@ -394,103 +395,133 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
 
                         <input type="hidden" name="form_mode" value="{mode}">
 
-                        <div class="space-y-4">
+                        <div class="space-y-6">
                             {f'''
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rule ID</label>
-                                    <input type="text" name="rule_id" placeholder="e.g. 3014" required
-                                           class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
+                            <div class="grid grid-cols-2 gap-8">
+                                <!-- Basic Info Section -->
+                                <div class="space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Master Rule Definition</h4>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Rule Description</label>
+                                        <input type="text" name="master_description" placeholder="Master rule description..." required
+                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Carrier Search Mode</label>
+                                            <select name="carrier_search_mode" onchange="toggleCarrierFields(this.value)"
+                                                    class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                                                <option value="DEFAULT">DEFAULT</option>
+                                                <option value="BPARTY">BPARTY</option>
+                                                <option value="MSRN">MSRN</option>
+                                                <option value="TENANT">TENANT</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Recording Flag</label>
+                                            <div class="mt-1 flex items-center">
+                                                <label class="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" name="recording_flag_toggle" class="sr-only peer">
+                                                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                                    <span class="ml-3 text-sm font-medium text-gray-500">Record Call</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div id="carrier-id-container" class="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                        <div id="field-DEFAULT">
+                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Default Carrier List ID</label>
+                                            <input type="text" name="default_cl_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                        </div>
+                                        <div id="field-BPARTY" class="hidden">
+                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">B-Party Mapping ID</label>
+                                            <input type="text" name="b_party_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                        </div>
+                                        <div id="field-MSRN" class="hidden">
+                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">MSRN Mapping ID</label>
+                                            <input type="text" name="msrn_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                        </div>
+                                        <div id="field-TENANT" class="hidden">
+                                            <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Tenant Carrier Mapping ID</label>
+                                            <input type="text" name="tenant_carrier_id" placeholder="0" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm">
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Rule Action</label>
-                                    <select name="rule_action" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
-                                        <option value="ALLOW">ALLOW</option>
-                                        <option value="DENY">DENY</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Mapping Description</label>
-                                <input type="text" name="description" placeholder="e.g. TATA MO OFFNET ROUTING" required
-                                       class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
-                            </div>
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Carrier Search Mode</label>
-                                    <select name="carrier_search_mode" 
-                                            class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
-                                        <option value="DEFAULT">DEFAULT</option>
-                                        <option value="BPARTY">BPARTY</option>
-                                        <option value="MSRN">MSRN</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Recording Flag</label>
-                                    <select name="recording_flag" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
-                                        <option value="0">Disabled (0)</option>
-                                        <option value="1">Enabled (1)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div id="dynamic-input-fields" class="grid grid-cols-2 gap-4 pt-2">
-                                <div>
-                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Default Carrier List ID</label>
-                                    <input type="text" name="default_cl_id" placeholder="0" class="w-full px-3 py-2 bg-blue-50/30 border border-blue-100 rounded-lg text-sm">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">B-Party Mapping ID</label>
-                                    <input type="text" name="b_party_id" placeholder="0" class="w-full px-3 py-2 bg-blue-50/30 border border-blue-100 rounded-lg text-sm">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">MSRN Mapping ID</label>
-                                    <input type="text" name="msrn_id" placeholder="0" class="w-full px-3 py-2 bg-blue-50/30 border border-blue-100 rounded-lg text-sm">
-                                </div>
-                                <div>
-                                    <label class="block text-[10px] font-bold text-blue-600 uppercase mb-1">Tenant Carrier Mapping ID</label>
-                                    <input type="text" name="tenant_carrier_id" placeholder="0" class="w-full px-3 py-2 bg-blue-50/30 border border-blue-100 rounded-lg text-sm">
+
+                                <!-- Mapping Section -->
+                                <div class="space-y-4 border-l pl-8">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Tenant Mapping Info</h4>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mapping Description</label>
+                                        <input type="text" name="mapping_description" placeholder="Tenant specific name..." required
+                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
+                                            <select name="call_type" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                                                <option value="ONNET">ONNET</option>
+                                                <option value="OFFNET">OFFNET</option>
+                                                <option value="ALLCALL">ALLCALL</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Service</label>
+                                            <select name="service_id" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                                                {svc_options}
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                             ''' if is_new else f'''
-                            <div>
-                                <label class="block text-sm font-bold text-gray-700 mb-2">Select Rule Master</label>
-                                <select name="rule_id" required
-                                        hx-get="/rule/details/partial" hx-target="#dynamic-details-view" hx-trigger="change"
-                                        class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all">
-                                    {rule_options}
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Mapping Description</label>
-                                <input type="text" name="description" placeholder="e.g. TATA MO OFFNET ROUTING" required
-                                       class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm">
-                            </div>
-                            <div id="dynamic-details-view" class="p-4 bg-blue-50/50 rounded-xl border border-blue-100 min-h-[80px] flex items-center justify-center">
-                                <span class="text-xs text-blue-400 italic">Select a rule to preview details</span>
+                            <div class="grid grid-cols-2 gap-8">
+                                <div class="space-y-4">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Selection</h4>
+                                    <div>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">Select Master Rule</label>
+                                        <select name="rule_id" required
+                                                hx-get="/rule/details/partial" hx-target="#dynamic-details-view" hx-trigger="change"
+                                                class="block w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 text-sm">
+                                            {rule_options}
+                                        </select>
+                                    </div>
+                                    <div id="dynamic-details-view" class="p-4 bg-blue-50/50 rounded-xl border border-blue-100 min-h-[140px] flex items-center justify-center">
+                                        <span class="text-xs text-blue-400 italic">Select a rule to preview configuration</span>
+                                    </div>
+                                </div>
+                                <div class="space-y-4 border-l pl-8">
+                                    <h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest border-b pb-1">Tenant Mapping Info</h4>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Mapping Description</label>
+                                        <input type="text" name="mapping_description" placeholder="Tenant specific name..." required
+                                               class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Call Type</label>
+                                            <select name="call_type" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                                                <option value="ONNET">ONNET</option>
+                                                <option value="OFFNET">OFFNET</option>
+                                                <option value="ALLCALL">ALLCALL</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-xs font-bold text-gray-700 uppercase mb-1">Service</label>
+                                            <select name="service_id" class="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                                                {svc_options}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                             '''}
-
-                            <div class="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Call Type</label>
-                                    <select name="call_type" class="block w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                        <option value="ONNET">ONNET</option>
-                                        <option value="OFFNET">OFFNET</option>
-                                        <option value="ALLCALL">ALLCALL</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Service</label>
-                                    <select name="service_id" class="block w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                        {svc_options}
-                                    </select>
-                                </div>
-                            </div>
                         </div>
                     </div>
                     <div class="bg-gray-50 px-8 py-6 flex flex-row-reverse space-x-reverse space-x-3">
-                        <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">
-                            Save Rule Mapping
+                        <button type="submit" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-10 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all">
+                            Save Configuration
                         </button>
                         <button type="button" hx-on:click="document.getElementById('modal').remove()" class="w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-100 transition-all">
                             Cancel
@@ -499,6 +530,19 @@ def sip_rule_modal(tenant_id, error=None, mode="new"):
                 </form>
             </div>
         </div>
+        <script>
+            function toggleCarrierFields(mode) {{
+                const fields = ['DEFAULT', 'BPARTY', 'MSRN', 'TENANT'];
+                fields.forEach(f => {{
+                    const el = document.getElementById('field-' + f);
+                    if (f === mode) {{
+                        el.classList.remove('hidden');
+                    }} else {{
+                        el.classList.add('hidden');
+                    }}
+                }});
+            }}
+        </script>
     </div>
     """
 
@@ -606,21 +650,20 @@ def tenant_sip_rule_add(tenant_id):
     
     if form_mode == "new":
         rule_data = {
-            'rule_id': request.form.get('rule_id'),
-            'description': request.form.get('description'), # This is both master and mapping desc for new rules
-            'mapping_desc': request.form.get('description'),
-            'rule_action': request.form.get('rule_action'),
+            'description': request.form.get('master_description'),
+            'mapping_desc': request.form.get('mapping_description'),
+            'rule_action': 'ALLOW',
             'carrier_search_mode': request.form.get('carrier_search_mode'),
             'b_party_id': request.form.get('b_party_id', '0'),
             'msrn_id': request.form.get('msrn_id', '0'),
             'tenant_carrier_id': request.form.get('tenant_carrier_id', '0'),
             'default_cl_id': request.form.get('default_cl_id', '0'),
-            'recording_flag': int(request.form.get('recording_flag', 0))
+            'recording_flag': 1 if request.form.get('recording_flag_toggle') == 'on' else 0
         }
         success, error = db.create_and_map_rule(tenant_id, rule_data, request.form.get('call_type'), request.form.get('service_id'))
     else:
         rule_id = request.form.get('rule_id')
-        description = request.form.get('description')
+        description = request.form.get('mapping_description')
         success, error = db.add_sip_rule(tenant_id, rule_id, request.form.get('call_type'), request.form.get('service_id'), description)
     
     if success:

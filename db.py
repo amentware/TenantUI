@@ -94,24 +94,26 @@ def create_and_map_rule(tenant_id, rule_data, call_type, service_id):
     conn = get_conn()
     try:
         with conn:
-            # 1. Create the rule in SIP_RULE_MASTER (using INSERT OR REPLACE or check)
-            conn.execute(
-                """INSERT OR REPLACE INTO SIP_RULE_MASTER 
-                   (RULE_ID, DESCRIPTION, RULE_ACTION, CARRIER_SEARCH_MODE, 
+            # 1. Create the rule in SIP_RULE_MASTER (let RULE_ID autoincrement)
+            cur = conn.execute(
+                """INSERT INTO SIP_RULE_MASTER 
+                   (DESCRIPTION, RULE_ACTION, CARRIER_SEARCH_MODE, 
                     B_PARTY_CARRIER_MAPPING_ID, MSRN_CARRIER_MAPPING_ID, 
                     TENANT_CARRIER_MAPPING_ID, DEFAULT_CARRIER_LIST_ID, RECORDING_FLAG)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (rule_data['rule_id'], rule_data['description'], rule_data['rule_action'], 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (rule_data['description'], rule_data['rule_action'], 
                  rule_data['carrier_search_mode'], rule_data['b_party_id'], 
                  rule_data['msrn_id'], rule_data['tenant_carrier_id'], 
                  rule_data['default_cl_id'], rule_data['recording_flag'])
             )
+            new_rule_id = cur.lastrowid
+            
             # 2. Map it to the tenant
             conn.execute(
                 """INSERT INTO TENANT_SIP_RULE_MAPPING
                    (TENANT_ID, RULE_ID, DESCRIPTION, CALL_TYPE, SERVICE_ID, CREATED_AT)
                    VALUES (?, ?, ?, ?, ?, ?)""",
-                (tenant_id, rule_data['rule_id'], rule_data['mapping_desc'], 
+                (tenant_id, new_rule_id, rule_data['mapping_desc'], 
                  call_type, service_id,
                  datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
             )
