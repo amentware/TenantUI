@@ -172,6 +172,18 @@ def layout(content, title="SIP Admin Portal", active_sidebar="tenants"):
             const hidden = document.getElementById(containerId + '-hidden');
             const list = document.getElementById(containerId + '-list');
             
+            // Check for duplicates in multi-row selections
+            if (hidden && hidden.name && hidden.name.endsWith('[]')) {{
+                const others = document.querySelectorAll(`input[name="${{hidden.name}}"]`);
+                for (let other of others) {{
+                    if (other !== hidden && other.value == id) {{
+                        showToast('This list is already selected in another row', 'error');
+                        list.classList.add('hidden');
+                        return;
+                    }}
+                }}
+            }}
+            
             input.value = text;
             hidden.value = id;
             list.classList.add('hidden');
